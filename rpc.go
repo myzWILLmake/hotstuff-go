@@ -26,7 +26,7 @@ func (hs *HotStuff) Msg(args *MsgArgs, reply *DefaultReply) error {
 
 	if !args.ParSig {
 		// From Leader
-		msg := fmt.Sprintf("Receive Msg From Leader: rid[%d] viewId[%d] nodeId[%s]\n", args.RepId, args.ViewId, args.Node.Id)
+		msg := fmt.Sprintf("\033[1;36mReceive Msg From Leader:\033[0m rid[%d] viewId[%d] nodeId[%s]\n", args.RepId, args.ViewId, args.Node.Id)
 		hs.debugPrint(msg)
 		if args.ViewId%hs.n != args.RepId {
 			reply.Err = fmt.Sprintf("Generic msg from invalid leader[%d].\n", args.RepId)
@@ -46,7 +46,7 @@ func (hs *HotStuff) Msg(args *MsgArgs, reply *DefaultReply) error {
 		hs.update(&args.Node)
 	} else {
 		// To Leader
-		msg := fmt.Sprintf("Receive Msg to Leader: rid[%d] viewId[%d] nodeId[%s]\n", args.RepId, args.ViewId, args.Node.Id)
+		msg := fmt.Sprintf("\033[1;36mReceive Msg to Leader:\033[0m rid[%d] viewId[%d] nodeId[%s] qcId[%s]\n", args.RepId, args.ViewId, args.Node.Id, args.QC.NodeId)
 		hs.debugPrint(msg)
 		// if args.ViewId != hs.viewId {
 		// 	reply.Err = fmt.Sprintf("Vote msg from invalid viewId[%d].\n", args.ViewId)

@@ -115,7 +115,7 @@ func (hs *HotStuff) createLeaf(parent string, request *RequestArgs, qc QC) *LogN
 	node.Justify = qc
 
 	hs.saveNode(node)
-	msg := fmt.Sprintf("CreateLeaf: id[%s] parent[%s] view[%d] op[%s]\n", node.Id, node.Parent, node.ViewId, node.Request.Operation.(string))
+	msg := fmt.Sprintf("\033[0;32mCreate Leaf:\033[0m id[%s] parent[%s] view[%d] op[%s]\n", node.Id, node.Parent, node.ViewId, node.Request.Operation.(string))
 	hs.debugPrint(msg)
 	return node
 }
@@ -157,7 +157,7 @@ func (hs *HotStuff) update(n *LogNode) {
 
 	if hs.safeNode(prepare, prepare.Justify) {
 		// node saved
-		msg := fmt.Sprintf("LogNode saved: id[%s] qcId[%s] qcview[%d] \n", n.Id, n.Justify.NodeId, n.Justify.ViewId)
+		msg := fmt.Sprintf("\033[1;32mLogNode saved:\033[0m id[%s] qcId[%s] qcview[%d] \n", n.Id, n.Justify.NodeId, n.Justify.ViewId)
 		hs.debugPrint(msg)
 
 		hs.saveNode(n)
@@ -176,7 +176,8 @@ func (hs *HotStuff) update(n *LogNode) {
 			hs.lockedQC = precommit.Justify
 			if commit != nil && decide != nil && commit.Parent == decide.Id {
 				//execute decide
-				hs.debugPrint(fmt.Sprintf("Execute Request: id[%s], op[%s]\n", decide.Id, decide.Request.Operation.(string)))
+				msg := fmt.Sprintf("\033[1;34mExecute Request:\033[0m id[%s], op[%s]\n", decide.Id, decide.Request.Operation.(string))
+				hs.debugPrint(msg)
 				request := decide.Request
 				if request.Timestamp != 0 {
 					reply := &ReplyArgs{}
@@ -275,7 +276,7 @@ func (hs *HotStuff) newView(viewId int) {
 		hs.mu.Lock()
 		defer hs.mu.Unlock()
 		hs.viewTimer = nil
-		msg := fmt.Sprintf("NewView timeout: rep[%d] oldview[%d]\n", hs.me, hs.viewId)
+		msg := fmt.Sprintf("\033[1;33mNewView timeout:\033[0m rep[%d] oldview[%d]\n", hs.me, hs.viewId)
 		hs.debugPrint(msg)
 
 		newViewMsg := &MsgArgs{}
