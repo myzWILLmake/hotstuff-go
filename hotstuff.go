@@ -19,6 +19,7 @@ type HotStuff struct {
 	me            int
 	viewId        int
 	nodeMap       map[string]*LogNode
+	lastNode      *LogNode
 	genericQC     QC
 	lockedQC      QC
 	savedMsgs     map[int]*MsgArgs
@@ -113,7 +114,7 @@ func (hs *HotStuff) createLeaf(parent string, request *RequestArgs, qc QC) *LogN
 	node.Id = getLogNodeId(hs.viewId, request)
 	node.Justify = qc
 
-	hs.nodeMap[node.Id] = node
+	hs.saveNode(node)
 	msg := fmt.Sprintf("CreateLeaf: id[%s] parent[%s] view[%d] op[%s]\n", node.Id, node.Parent, node.ViewId, node.Request.Operation.(string))
 	hs.debugPrint(msg)
 	return node
@@ -130,6 +131,11 @@ func (hs *HotStuff) safeNode(n *LogNode, qc QC) bool {
 		return true
 	}
 	return false
+}
+
+func (hs *HotStuff) saveNode(n *LogNode) {
+	hs.lastNode = n
+	hs.nodeMap[n.Id] = n
 }
 
 func (hs *HotStuff) update(n *LogNode) {
@@ -154,7 +160,7 @@ func (hs *HotStuff) update(n *LogNode) {
 		msg := fmt.Sprintf("LogNode saved: id[%s] qcId[%s] qcview[%d] \n", n.Id, n.Justify.NodeId, n.Justify.ViewId)
 		hs.debugPrint(msg)
 
-		hs.nodeMap[n.Id] = n
+		hs.saveNode(n)
 		voteMsg := &MsgArgs{}
 		voteMsg.RepId = hs.me
 		voteMsg.ViewId = hs.viewId
@@ -280,6 +286,9 @@ func (hs *HotStuff) newView(viewId int) {
 }
 
 func (hs *HotStuff) getServerInfo() map[string]interface{} {
+	hs.mu.Lock()
+	defer hs.mu.Unlock()
+
 	info := make(map[string]interface{})
 	info["id"] = hs.me
 	info["viewId"] = hs.viewId
@@ -290,6 +299,25 @@ func (hs *HotStuff) getServerInfo() map[string]interface{} {
 	info["lockedQCId"] = hs.lockedQC.NodeId
 	info["lockedQCView"] = hs.lockedQC.ViewId
 	return info
+}
+
+func (hs *HotStuff) getRecentNodes() string {
+	hs.mu.Lock()
+	defer hs.mu.Unlock()
+
+	node := hs.lastNode
+	msg := "Recent Node: \n"
+	for i := 0; i < 5; i++ {
+		if node == nil {
+			return msg
+		}
+
+		msg += fmt.Sprintf("    nodeId[%s] view[%d] parent[%s] qc[%s]\n", node.Id, node.ViewId, node.Parent, node.Justify.NodeId)
+		pId := node.Parent
+		node = hs.nodeMap[pId]
+	}
+
+	return msg
 }
 
 func MakeHotStuff(id int, serverPeers, clientPeers []peerWrapper, debugCh chan interface{}) *HotStuff {

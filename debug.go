@@ -100,6 +100,11 @@ func (hds *HotStuffDebugServer) handleMaliciousBehavior(conn net.Conn, args []st
 	conn.Write([]byte(fmt.Sprintf("malicious behavior set. mode[%d]\n", mbmode)))
 }
 
+func (hds *HotStuffDebugServer) handleNodes(conn net.Conn) {
+	msg := hds.hotStuffServer.getRecentNodes()
+	conn.Write([]byte(msg))
+}
+
 func (hds *HotStuffDebugServer) handleConnArgs(conn net.Conn, args []string) {
 	switch args[0] {
 	case "mb":
@@ -110,6 +115,8 @@ func (hds *HotStuffDebugServer) handleConnArgs(conn net.Conn, args []string) {
 		hds.tcpl.Close()
 	case "print":
 		hds.handlePrint(conn)
+	case "nodes":
+		hds.handleNodes(conn)
 	case "quit":
 		conn.Write([]byte("Bye!\n"))
 	case "echo":
