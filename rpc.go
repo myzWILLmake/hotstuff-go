@@ -48,10 +48,10 @@ func (hs *HotStuff) Msg(args *MsgArgs, reply *DefaultReply) error {
 		// To Leader
 		msg := fmt.Sprintf("Receive Msg to Leader: rid[%d] viewId[%d] nodeId[%s]\n", args.RepId, args.ViewId, args.Node.Id)
 		hs.debugPrint(msg)
-		if args.ViewId != hs.viewId {
-			reply.Err = fmt.Sprintf("Vote msg from invalid viewId[%d].\n", args.ViewId)
-			return nil
-		}
+		// if args.ViewId != hs.viewId {
+		// 	reply.Err = fmt.Sprintf("Vote msg from invalid viewId[%d].\n", args.ViewId)
+		// 	return nil
+		// }
 
 		if hs.isNextLeader() {
 			hs.savedMsgs[args.RepId] = args

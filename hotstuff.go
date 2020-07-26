@@ -192,7 +192,14 @@ func (hs *HotStuff) update(n *LogNode) {
 }
 
 func (hs *HotStuff) processSavedMsgs() {
-	if len(hs.savedMsgs) >= hs.n-hs.f {
+	cnt := 0
+	for _, msg := range hs.savedMsgs {
+		if msg.ViewId == hs.viewId {
+			cnt++
+		}
+	}
+
+	if cnt >= hs.n-hs.f {
 		checkVoteMap := make(map[string]int)
 		// try to find genericQC
 		for _, msg := range hs.savedMsgs {
@@ -263,8 +270,6 @@ func (hs *HotStuff) newView(viewId int) {
 		hs.noopTimer.Start()
 	}
 
-	hs.savedMsgs = make(map[int]*MsgArgs)
-
 	hs.viewTimer = NewTimerWithCancel(time.Duration(ViewTimeOut * time.Millisecond))
 	hs.viewTimer.SetTimeout(func() {
 		hs.mu.Lock()
@@ -305,16 +310,16 @@ func (hs *HotStuff) getRecentNodes() string {
 	hs.mu.Lock()
 	defer hs.mu.Unlock()
 
-	node := hs.lastNode
-	msg := "Recent Node: \n"
+	node := hs.nodeMap[hs.genericQC.NodeId]
+	msg := "Recent valid nodes: \n"
 	for i := 0; i < 5; i++ {
 		if node == nil {
 			return msg
 		}
 
 		msg += fmt.Sprintf("    nodeId[%s] view[%d] parent[%s] qc[%s]\n", node.Id, node.ViewId, node.Parent, node.Justify.NodeId)
-		pId := node.Parent
-		node = hs.nodeMap[pId]
+		qcId := node.Justify.NodeId
+		node = hs.nodeMap[qcId]
 	}
 
 	return msg
