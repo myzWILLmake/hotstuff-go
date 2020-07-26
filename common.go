@@ -47,7 +47,7 @@ type LogNode struct {
 }
 
 func getLogNodeId(viewId int, request *RequestArgs) string {
-	s := strconv.Itoa(viewId) + " " + request.Operation.(string) + ";"
+	s := strconv.Itoa(viewId) + "_" + request.Operation.(string)
 	// h := sha1.New()
 	// h.Write([]byte(s))
 	// bs := h.Sum(nil)
@@ -88,3 +88,11 @@ type MsgArgs struct {
 	// TODO: implement partial signature
 	ParSig bool
 }
+
+type MaliciousBehaviorMode int
+
+const (
+	NormalMode = iota
+	CrashedLike
+	MaliciousMode
+)

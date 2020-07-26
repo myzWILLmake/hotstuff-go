@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -78,8 +79,31 @@ lQC             %d
 	conn.Write([]byte(msg))
 }
 
+func (hds *HotStuffDebugServer) handleMaliciousBehavior(conn net.Conn, args []string) {
+	if len(args) < 2 {
+		conn.Write([]byte("Arguments not enough\n"))
+		return
+	}
+
+	mbmode, err := strconv.Atoi(args[1])
+	if err != nil {
+		conn.Write([]byte("Invalid malicious mode\n"))
+		return
+	}
+
+	err = hds.hotStuffServer.setMaliciousMode(mbmode)
+	if err != nil {
+		conn.Write([]byte(err.Error() + "\n"))
+		return
+	}
+
+	conn.Write([]byte(fmt.Sprintf("malicious behavior set. mode[%d]\n", mbmode)))
+}
+
 func (hds *HotStuffDebugServer) handleConnArgs(conn net.Conn, args []string) {
 	switch args[0] {
+	case "mb":
+		hds.handleMaliciousBehavior(conn, args)
 	case "kill":
 		conn.Write([]byte("Kill Server...\n"))
 		conn.Close()

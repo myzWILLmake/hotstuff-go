@@ -7,23 +7,24 @@ import (
 )
 
 const ViewTimeOut = 10000
-const noopTimeOut = 2000
+const noopTimeOut = 4000
 
 type HotStuff struct {
-	mu        *sync.Mutex
-	servers   []peerWrapper
-	clients   []peerWrapper
-	request   *RequestArgs
-	n         int
-	f         int
-	me        int
-	viewId    int
-	nodeMap   map[string]*LogNode
-	genericQC QC
-	lockedQC  QC
-	savedMsgs map[int]*MsgArgs
-	viewTimer *TimerWithCancel
-	noopTimer *TimerWithCancel
+	mu            *sync.Mutex
+	servers       []peerWrapper
+	clients       []peerWrapper
+	request       *RequestArgs
+	n             int
+	f             int
+	me            int
+	viewId        int
+	nodeMap       map[string]*LogNode
+	genericQC     QC
+	lockedQC      QC
+	savedMsgs     map[int]*MsgArgs
+	viewTimer     *TimerWithCancel
+	noopTimer     *TimerWithCancel
+	maliciousMode MaliciousBehaviorMode
 
 	debugCh chan interface{}
 }
@@ -42,11 +43,26 @@ func (hs *HotStuff) getLeader(viewId int) peerWrapper {
 }
 
 func (hs *HotStuff) broadcast(rpcname string, rpcargs interface{}) {
-	reply := &DefaultReply{}
-	for _, peer := range hs.servers {
-		p := peer
-		go p.Call("HotStuff."+rpcname, rpcargs, reply)
+	for id := range hs.servers {
+		hs.sendMsg(id, rpcname, rpcargs)
 	}
+}
+
+func (hs *HotStuff) sendMsg(id int, rpcname string, rpcacgs interface{}) {
+	switch hs.maliciousMode {
+	case NormalMode:
+		hs.rawSendMsg(id, rpcname, rpcacgs)
+	case CrashedLike:
+		return
+	case MaliciousMode:
+		hs.sendMaliciousMsg(id, rpcname, rpcacgs)
+	}
+}
+
+func (hs *HotStuff) rawSendMsg(id int, rpcname string, rpcacgs interface{}) {
+	p := hs.servers[id]
+	reply := &DefaultReply{}
+	go p.Call("HotStuff."+rpcname, rpcacgs, reply)
 }
 
 func (hs *HotStuff) replyClient(clientId int, replyArgs *ReplyArgs) {
@@ -75,10 +91,10 @@ func (hs *HotStuff) createLeaf(parent string, request *RequestArgs, qc QC) *LogN
 
 	parentNode, ok := hs.nodeMap[parent]
 	if ok {
-		parentView := parentNode.ViewId
-		for parentView < hs.viewId-1 {
+		tmpView := parentNode.ViewId + 1
+		for tmpView < hs.viewId {
 			dummyNode := &LogNode{}
-			dummyNode.ViewId = parentView
+			dummyNode.ViewId = tmpView
 			dummyNode.Parent = parent
 			dummyNode.Request = RequestArgs{}
 			dummyNode.Request.Operation = "dummy"
@@ -86,7 +102,7 @@ func (hs *HotStuff) createLeaf(parent string, request *RequestArgs, qc QC) *LogN
 			dummyNode.Justify = QC{}
 			hs.nodeMap[dummyNode.Id] = dummyNode
 			parent = dummyNode.Id
-			parentView++
+			tmpView++
 		}
 	}
 
@@ -144,9 +160,8 @@ func (hs *HotStuff) update(n *LogNode) {
 		voteMsg.ViewId = hs.viewId
 		voteMsg.Node = *prepare
 		voteMsg.ParSig = true
-		replyArgs := &DefaultReply{}
-		nextLeader := hs.getLeader(hs.viewId + 1)
-		go nextLeader.Call("HotStuff.Msg", voteMsg, replyArgs)
+		nextLeaderId := (hs.viewId + 1) % hs.n
+		hs.sendMsg(nextLeaderId, "Msg", voteMsg)
 	}
 
 	if prepare != nil && precommit != nil && prepare.Parent == precommit.Id {
@@ -155,7 +170,7 @@ func (hs *HotStuff) update(n *LogNode) {
 			hs.lockedQC = precommit.Justify
 			if commit != nil && decide != nil && commit.Parent == decide.Id {
 				//execute decide
-				hs.debugPrint(fmt.Sprintf("Execute Request: id[%s], op[%s]", decide.Id, decide.Request.Operation.(string)))
+				hs.debugPrint(fmt.Sprintf("Execute Request: id[%s], op[%s]\n", decide.Id, decide.Request.Operation.(string)))
 				request := decide.Request
 				if request.Timestamp != 0 {
 					reply := &ReplyArgs{}
@@ -252,13 +267,13 @@ func (hs *HotStuff) newView(viewId int) {
 		msg := fmt.Sprintf("NewView timeout: rep[%d] oldview[%d]\n", hs.me, hs.viewId)
 		hs.debugPrint(msg)
 
-		nextLeader := hs.getLeader(hs.viewId + 1)
 		newViewMsg := &MsgArgs{}
 		newViewMsg.ViewId = hs.viewId
 		newViewMsg.RepId = hs.me
 		newViewMsg.QC = hs.genericQC
 		newViewMsg.ParSig = true
-		go nextLeader.Call("HotStuff.Msg", newViewMsg, &DefaultReply{})
+		nextLeaderId := (hs.viewId + 1) % hs.n
+		hs.sendMsg(nextLeaderId, "Msg", newViewMsg)
 		hs.newView(hs.viewId + 1)
 	})
 	hs.viewTimer.Start()
@@ -288,6 +303,7 @@ func MakeHotStuff(id int, serverPeers, clientPeers []peerWrapper, debugCh chan i
 	hs.n = len(hs.servers)
 	hs.f = (hs.n - 1) / 3
 	hs.savedMsgs = make(map[int]*MsgArgs)
+	hs.maliciousMode = NormalMode
 	go hs.newView(1)
 
 	hs.debugCh = debugCh
