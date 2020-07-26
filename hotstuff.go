@@ -7,7 +7,7 @@ import (
 )
 
 const ViewTimeOut = 10000
-const NoopTimeOut = 5000
+const NoopTimeOut = 4000
 
 type HotStuff struct {
 	mu            *sync.Mutex
@@ -202,21 +202,22 @@ func (hs *HotStuff) processSavedMsgs() {
 
 	if cnt >= hs.n-hs.f {
 		checkVoteMap := make(map[string]int)
-		// try to find genericQC
+		// try to find genericQC (get consensus)
 		for _, msg := range hs.savedMsgs {
 			if msg.Node.Id != "" {
 				node := msg.Node
 				checkVoteMap[node.Id]++
 				if checkVoteMap[node.Id] > hs.f {
+					// get valid consensus
 					newQc := QC{}
 					newQc.ViewId = node.ViewId
 					newQc.NodeId = node.Id
 					hs.genericQC = newQc
-					hs.newView(hs.viewId + 1)
-					return
 				}
 			}
 		}
+		// if cannot find genericQC, it will generate a dummy node
+		hs.newView(hs.viewId + 1)
 	}
 }
 
