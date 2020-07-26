@@ -7,7 +7,7 @@ import (
 )
 
 const ViewTimeOut = 10000
-const noopTimeOut = 4000
+const NoopTimeOut = 5000
 
 type HotStuff struct {
 	mu            *sync.Mutex
@@ -258,7 +258,7 @@ func (hs *HotStuff) newView(viewId int) {
 			}
 		}
 
-		hs.noopTimer = NewTimerWithCancel(time.Duration(noopTimeOut * time.Millisecond))
+		hs.noopTimer = NewTimerWithCancel(time.Duration(NoopTimeOut * time.Millisecond))
 		hs.noopTimer.SetTimeout(func() {
 			hs.mu.Lock()
 			defer hs.mu.Unlock()
