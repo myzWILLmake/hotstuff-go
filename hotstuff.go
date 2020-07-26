@@ -7,6 +7,7 @@ import (
 )
 
 const ViewTimeOut = 10000
+const noopTimeOut = 2000
 
 type HotStuff struct {
 	mu        *sync.Mutex
@@ -22,6 +23,7 @@ type HotStuff struct {
 	lockedQC  QC
 	savedMsgs map[int]*MsgArgs
 	viewTimer *TimerWithCancel
+	noopTimer *TimerWithCancel
 
 	debugCh chan interface{}
 }
@@ -57,42 +59,58 @@ func (hs *HotStuff) debugPrint(msg string) {
 	hs.debugCh <- msg
 }
 
+func (hs *HotStuff) processClientRequest(request *RequestArgs) {
+	curProposal := hs.createLeaf(hs.genericQC.NodeId, request, hs.genericQC)
+	genericMsg := &MsgArgs{}
+	genericMsg.RepId = hs.me
+	genericMsg.ViewId = hs.viewId
+	genericMsg.Node = *curProposal
+	hs.broadcast("Msg", genericMsg)
+}
+
 func (hs *HotStuff) createLeaf(parent string, request *RequestArgs, qc QC) *LogNode {
 	if request == nil {
 		return nil
 	}
 
-	parentNode := hs.nodeMap[parent]
-	parentView := parentNode.viewId
-	for parentView < hs.viewId-1 {
-		dummyNode := &LogNode{}
-		dummyNode.viewId = parentView
-		dummyNode.parent = parent
-		dummyNode.request = RequestArgs{}
-		dummyNode.request.Operation = "dummy"
-		dummyNode.id = getLogNodeId(dummyNode.viewId, &dummyNode.request)
-		dummyNode.justify = QC{}
-		hs.nodeMap[dummyNode.id] = dummyNode
-		parent = dummyNode.id
-		parentView++
+	parentNode, ok := hs.nodeMap[parent]
+	if ok {
+		parentView := parentNode.ViewId
+		for parentView < hs.viewId-1 {
+			dummyNode := &LogNode{}
+			dummyNode.ViewId = parentView
+			dummyNode.Parent = parent
+			dummyNode.Request = RequestArgs{}
+			dummyNode.Request.Operation = "dummy"
+			dummyNode.Id = getLogNodeId(dummyNode.ViewId, &dummyNode.Request)
+			dummyNode.Justify = QC{}
+			hs.nodeMap[dummyNode.Id] = dummyNode
+			parent = dummyNode.Id
+			parentView++
+		}
 	}
 
 	node := &LogNode{}
-	node.viewId = hs.viewId
-	node.parent = parent
-	node.request = *request
-	node.id = getLogNodeId(hs.viewId, request)
-	node.justify = qc
+	node.ViewId = hs.viewId
+	node.Parent = parent
+	node.Request = *request
+	node.Id = getLogNodeId(hs.viewId, request)
+	node.Justify = qc
 
-	hs.nodeMap[node.id] = node
+	hs.nodeMap[node.Id] = node
+	msg := fmt.Sprintf("CreateLeaf: id[%s] parent[%s] view[%d] op[%s]\n", node.Id, node.Parent, node.ViewId, node.Request.Operation.(string))
+	hs.debugPrint(msg)
 	return node
 }
 
 func (hs *HotStuff) safeNode(n *LogNode, qc QC) bool {
-	if n.parent == hs.lockedQC.nodeId {
-		return true
+	for n != nil {
+		if n.Parent == hs.lockedQC.NodeId {
+			return true
+		}
+		n = hs.nodeMap[n.Parent]
 	}
-	if qc.viewId > hs.lockedQC.viewId {
+	if qc.ViewId > hs.lockedQC.ViewId {
 		return true
 	}
 	return false
@@ -103,19 +121,24 @@ func (hs *HotStuff) update(n *LogNode) {
 	var nodeId string
 	prepare = n
 	if prepare != nil {
-		nodeId = prepare.justify.nodeId
+		nodeId = prepare.Justify.NodeId
 		precommit = hs.nodeMap[nodeId]
 	}
 	if precommit != nil {
-		nodeId = precommit.justify.nodeId
+		nodeId = precommit.Justify.NodeId
 		commit = hs.nodeMap[nodeId]
 	}
 	if commit != nil {
-		nodeId = commit.justify.nodeId
+		nodeId = commit.Justify.NodeId
 		decide = hs.nodeMap[nodeId]
 	}
 
-	if hs.safeNode(prepare, prepare.justify) {
+	if hs.safeNode(prepare, prepare.Justify) {
+		// node saved
+		msg := fmt.Sprintf("LogNode saved: id[%s] qcId[%s] qcview[%d] \n", n.Id, n.Justify.NodeId, n.Justify.ViewId)
+		hs.debugPrint(msg)
+
+		hs.nodeMap[n.Id] = n
 		voteMsg := &MsgArgs{}
 		voteMsg.RepId = hs.me
 		voteMsg.ViewId = hs.viewId
@@ -126,14 +149,14 @@ func (hs *HotStuff) update(n *LogNode) {
 		go nextLeader.Call("HotStuff.Msg", voteMsg, replyArgs)
 	}
 
-	if prepare.parent == precommit.id {
-		hs.genericQC = prepare.justify
-		if precommit.parent == commit.id {
-			hs.lockedQC = precommit.justify
-			if commit.parent == decide.id {
+	if prepare != nil && precommit != nil && prepare.Parent == precommit.Id {
+		hs.genericQC = prepare.Justify
+		if precommit != nil && commit != nil && precommit.Parent == commit.Id {
+			hs.lockedQC = precommit.Justify
+			if commit != nil && decide != nil && commit.Parent == decide.Id {
 				//execute decide
-				hs.debugPrint(fmt.Sprintf("Execute Request: id[%s], op[%s]", decide.id, decide.request.Operation.(string)))
-				request := decide.request
+				hs.debugPrint(fmt.Sprintf("Execute Request: id[%s], op[%s]", decide.Id, decide.Request.Operation.(string)))
+				request := decide.Request
 				if request.Timestamp != 0 {
 					reply := &ReplyArgs{}
 					reply.ViewId = hs.viewId
@@ -148,18 +171,19 @@ func (hs *HotStuff) update(n *LogNode) {
 }
 
 func (hs *HotStuff) processSavedMsgs() {
-	if len(hs.savedMsgs) > hs.n-hs.f {
+	if len(hs.savedMsgs) >= hs.n-hs.f {
 		checkVoteMap := make(map[string]int)
 		// try to find genericQC
 		for _, msg := range hs.savedMsgs {
-			if msg.Node.id != "" {
+			if msg.Node.Id != "" {
 				node := msg.Node
-				checkVoteMap[node.id]++
-				if checkVoteMap[node.id] > hs.f {
+				checkVoteMap[node.Id]++
+				if checkVoteMap[node.Id] > hs.f {
 					newQc := QC{}
-					newQc.viewId = node.viewId
-					newQc.nodeId = node.id
+					newQc.ViewId = node.ViewId
+					newQc.NodeId = node.Id
 					hs.genericQC = newQc
+					hs.newView(hs.viewId + 1)
 					return
 				}
 			}
@@ -172,21 +196,26 @@ func (hs *HotStuff) newView(viewId int) {
 		return
 	}
 
-	msg := fmt.Sprintf("HotStuff: Change to NewView[%d]\n", viewId)
+	msg := fmt.Sprintf("=== HotStuff: Change to NewView[%d] ===\n", viewId)
 	hs.debugPrint(msg)
 	if hs.viewTimer != nil {
 		hs.viewTimer.Cancel()
 		hs.viewTimer = nil
 	}
 
+	if hs.noopTimer != nil {
+		hs.noopTimer.Cancel()
+		hs.noopTimer = nil
+	}
+
 	hs.viewId = viewId
 	if hs.isLeader() {
 		var highNode *LogNode
 		for _, msg := range hs.savedMsgs {
-			if msg.Qc.nodeId != "" {
-				node, ok := hs.nodeMap[msg.Qc.nodeId]
+			if msg.QC.NodeId != "" {
+				node, ok := hs.nodeMap[msg.QC.NodeId]
 				if ok {
-					if highNode == nil || node.viewId > highNode.viewId {
+					if highNode == nil || node.ViewId > highNode.ViewId {
 						highNode = node
 					}
 				}
@@ -194,12 +223,23 @@ func (hs *HotStuff) newView(viewId int) {
 		}
 
 		if highNode != nil {
-			highQC := highNode.justify
-			if highQC.viewId > hs.genericQC.viewId {
+			highQC := highNode.Justify
+			if highQC.ViewId > hs.genericQC.ViewId {
 				hs.genericQC = highQC
 			}
 		}
 
+		hs.noopTimer = NewTimerWithCancel(time.Duration(noopTimeOut * time.Millisecond))
+		hs.noopTimer.SetTimeout(func() {
+			hs.mu.Lock()
+			defer hs.mu.Unlock()
+			hs.noopTimer = nil
+
+			noopRequset := &RequestArgs{}
+			noopRequset.Operation = "noop"
+			hs.processClientRequest(noopRequset)
+		})
+		hs.noopTimer.Start()
 	}
 
 	hs.savedMsgs = make(map[int]*MsgArgs)
@@ -208,12 +248,15 @@ func (hs *HotStuff) newView(viewId int) {
 	hs.viewTimer.SetTimeout(func() {
 		hs.mu.Lock()
 		defer hs.mu.Unlock()
+		hs.viewTimer = nil
+		msg := fmt.Sprintf("NewView timeout: rep[%d] oldview[%d]\n", hs.me, hs.viewId)
+		hs.debugPrint(msg)
 
 		nextLeader := hs.getLeader(hs.viewId + 1)
 		newViewMsg := &MsgArgs{}
 		newViewMsg.ViewId = hs.viewId
 		newViewMsg.RepId = hs.me
-		newViewMsg.Qc = hs.genericQC
+		newViewMsg.QC = hs.genericQC
 		newViewMsg.ParSig = true
 		go nextLeader.Call("HotStuff.Msg", newViewMsg, &DefaultReply{})
 		hs.newView(hs.viewId + 1)
@@ -227,10 +270,10 @@ func (hs *HotStuff) getServerInfo() map[string]interface{} {
 	info["viewId"] = hs.viewId
 	info["n"] = hs.n
 	info["f"] = hs.f
-	info["genericQCId"] = hs.genericQC.nodeId
-	info["genericQCView"] = hs.genericQC.viewId
-	info["lockedQCId"] = hs.lockedQC.nodeId
-	info["lockedQCView"] = hs.lockedQC.viewId
+	info["genericQCId"] = hs.genericQC.NodeId
+	info["genericQCView"] = hs.genericQC.ViewId
+	info["lockedQCId"] = hs.lockedQC.NodeId
+	info["lockedQCView"] = hs.lockedQC.ViewId
 	return info
 }
 
@@ -245,7 +288,7 @@ func MakeHotStuff(id int, serverPeers, clientPeers []peerWrapper, debugCh chan i
 	hs.n = len(hs.servers)
 	hs.f = (hs.n - 1) / 3
 	hs.savedMsgs = make(map[int]*MsgArgs)
-	hs.newView(1)
+	go hs.newView(1)
 
 	hs.debugCh = debugCh
 	return hs

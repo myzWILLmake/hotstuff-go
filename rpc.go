@@ -6,15 +6,15 @@ func (hs *HotStuff) Request(args *RequestArgs, reply *DefaultReply) error {
 	hs.mu.Lock()
 	defer hs.mu.Unlock()
 
+	// TODO: only one client request should be serviced
 	msg := fmt.Sprintf("Recieve Request: id[%d] op[%s] time[%d]\n", args.ClientId, args.Operation.(string), args.Timestamp)
 	hs.debugPrint(msg)
 	if hs.isLeader() {
-		curProposal := hs.createLeaf(hs.genericQC.nodeId, args, hs.genericQC)
-		genericMsg := &MsgArgs{}
-		genericMsg.RepId = hs.me
-		genericMsg.ViewId = hs.viewId
-		genericMsg.Node = *curProposal
-		hs.broadcast("Msg", genericMsg)
+		hs.processClientRequest(args)
+		if hs.noopTimer != nil {
+			hs.noopTimer.Cancel()
+			hs.noopTimer = nil
+		}
 	}
 
 	return nil
@@ -26,9 +26,9 @@ func (hs *HotStuff) Msg(args *MsgArgs, reply *DefaultReply) error {
 
 	if !args.ParSig {
 		// From Leader
-		msg := fmt.Sprintf("Receive Msg From Leader: rid[%d] viewId[%d] nodeId[%s]\n", args.RepId, args.ViewId, args.Node.id)
+		msg := fmt.Sprintf("Receive Msg From Leader: rid[%d] viewId[%d] nodeId[%s]\n", args.RepId, args.ViewId, args.Node.Id)
 		hs.debugPrint(msg)
-		if args.ViewId != args.RepId%hs.n {
+		if args.ViewId%hs.n != args.RepId {
 			reply.Err = fmt.Sprintf("Generic msg from invalid leader[%d].\n", args.RepId)
 			return nil
 		}
@@ -46,7 +46,7 @@ func (hs *HotStuff) Msg(args *MsgArgs, reply *DefaultReply) error {
 		hs.update(&args.Node)
 	} else {
 		// To Leader
-		msg := fmt.Sprintf("Receive Msg to Leader: rid[%d] viewId[%d] nodeId[%s]\n", args.RepId, args.ViewId, args.Node.id)
+		msg := fmt.Sprintf("Receive Msg to Leader: rid[%d] viewId[%d] nodeId[%s]\n", args.RepId, args.ViewId, args.Node.Id)
 		hs.debugPrint(msg)
 		if args.ViewId != hs.viewId {
 			reply.Err = fmt.Sprintf("Vote msg from invalid viewId[%d].\n", args.ViewId)
