@@ -1,6 +1,9 @@
 package hotstuff
 
-import "errors"
+import (
+	"errors"
+	"strconv"
+)
 
 func (hs *HotStuff) setMaliciousMode(maliciousMode int) error {
 	hs.mu.Lock()
@@ -27,7 +30,7 @@ func (hs *HotStuff) sendMaliciousMsg(id int, rpcname string, rpcacgs interface{}
 			fakeReq.ClientId = 1
 			fakeReq.Operation = "fakeop"
 			newId := getLogNodeId(hs.viewId, fakeReq)
-			newIdwithColor := "\033[0;31m" + newId + "\033[0m"
+			newIdwithColor := "\033[0;31m" + newId + "_" + strconv.Itoa(hs.me) + "\033[0m"
 			args.Node.Id = newIdwithColor
 			args.Node.Request = *fakeReq
 			hs.rawSendMsg(id, rpcname, args)
