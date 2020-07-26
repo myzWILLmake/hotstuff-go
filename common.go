@@ -1,7 +1,7 @@
 package hotstuff
 
 import (
-	"crypto/sha1"
+	"strconv"
 	"time"
 )
 
@@ -39,24 +39,26 @@ func (t *TimerWithCancel) Cancel() {
 }
 
 type LogNode struct {
-	id      string
-	parent  string
-	viewId  int
-	request RequestArgs
-	justify QC
+	Id      string
+	Parent  string
+	ViewId  int
+	Request RequestArgs
+	Justify QC
 }
 
 func getLogNodeId(viewId int, request *RequestArgs) string {
-	s := string(viewId) + " " + request.Operation.(string)
-	h := sha1.New()
-	h.Write([]byte(s))
-	bs := h.Sum(nil)
-	return string(bs)[:8]
+	s := strconv.Itoa(viewId) + " " + request.Operation.(string) + ";"
+	// h := sha1.New()
+	// h.Write([]byte(s))
+	// bs := h.Sum(nil)
+	// ns := fmt.Sprintf("%x", bs)
+	// return ns[:8]
+	return s
 }
 
 type QC struct {
-	viewId int
-	nodeId string
+	ViewId int
+	NodeId string
 	//TODO: threshold signatures
 }
 
@@ -81,7 +83,7 @@ type MsgArgs struct {
 	RepId  int
 	ViewId int
 	Node   LogNode
-	Qc     QC
+	QC     QC
 	// just a mark for partial signature
 	// TODO: implement partial signature
 	ParSig bool
