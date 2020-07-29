@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-const ViewTimeOut = 10000
+const ViewTimeOut = 15000
 const NoopTimeOut = 4000
 
 type HotStuff struct {
@@ -56,7 +56,9 @@ func (hs *HotStuff) sendMsg(id int, rpcname string, rpcacgs interface{}) {
 	case CrashedLike:
 		return
 	case MaliciousMode:
-		hs.sendMaliciousMsg(id, rpcname, rpcacgs)
+		hs.sendMaliciousMsg(id, rpcname, rpcacgs, false)
+	case PartialMaliciousMode:
+		hs.sendMaliciousMsg(id, rpcname, rpcacgs, true)
 	}
 }
 
@@ -168,6 +170,8 @@ func (hs *HotStuff) update(n *LogNode) {
 		voteMsg.ParSig = true
 		nextLeaderId := (hs.viewId + 1) % hs.n
 		hs.sendMsg(nextLeaderId, "Msg", voteMsg)
+	} else {
+		return
 	}
 
 	if prepare != nil && precommit != nil && prepare.Parent == precommit.Id {
@@ -226,7 +230,10 @@ func (hs *HotStuff) newView(viewId int) {
 		return
 	}
 
-	msg := fmt.Sprintf("=== HotStuff: Change to NewView[%d] ===\n", viewId)
+	msg := hs.getRecentNodes()
+	hs.debugPrint(msg)
+
+	msg = fmt.Sprintf("=== HotStuff: Change to NewView[%d] ===\n", viewId)
 	hs.debugPrint(msg)
 	if hs.viewTimer != nil {
 		hs.viewTimer.Cancel()
@@ -308,10 +315,13 @@ func (hs *HotStuff) getServerInfo() map[string]interface{} {
 	return info
 }
 
-func (hs *HotStuff) getRecentNodes() string {
+func (hs *HotStuff) getRecentNodesWithLock() string {
 	hs.mu.Lock()
 	defer hs.mu.Unlock()
+	return hs.getRecentNodes()
+}
 
+func (hs *HotStuff) getRecentNodes() string {
 	node := hs.nodeMap[hs.genericQC.NodeId]
 	msg := "Recent valid nodes: \n"
 	for i := 0; i < 5; i++ {

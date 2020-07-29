@@ -101,7 +101,7 @@ func (hds *HotStuffDebugServer) handleMaliciousBehavior(conn net.Conn, args []st
 }
 
 func (hds *HotStuffDebugServer) handleNodes(conn net.Conn) {
-	msg := hds.hotStuffServer.getRecentNodes()
+	msg := hds.hotStuffServer.getRecentNodesWithLock()
 	conn.Write([]byte(msg))
 }
 

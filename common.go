@@ -95,4 +95,5 @@ const (
 	NormalMode = iota
 	CrashedLike
 	MaliciousMode
+	PartialMaliciousMode
 )
